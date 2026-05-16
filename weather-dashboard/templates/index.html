@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Dynamic Weather Dashboard with real-time forecasts, smart recommendations, city comparison, and ambient audio." />
+    <title>Weather Dashboard — Live Forecast</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+</head>
+<body class="theme-default dark-mode">
+<main class="dashboard" id="dashboard">
+
+    <!-- ═══════════ HEADER ═══════════ -->
+    <header class="header">
+        <div class="header-top">
+            <h1 class="logo"><span class="logo-icon">⛅</span> Weather Dashboard</h1>
+            <div class="header-controls">
+                <button class="icon-btn" id="audio-toggle" aria-label="Toggle ambient sound" title="Ambient Sound">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+                        <path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07"/>
+                    </svg>
+                </button>
+                <button class="icon-btn" id="theme-toggle" aria-label="Toggle light/dark mode" title="Light/Dark Mode">
+                    <span id="theme-icon">🌙</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Mode Tabs -->
+        <div class="mode-tabs">
+            <button class="mode-tab active" data-mode="single" id="tab-single">Search</button>
+            <button class="mode-tab" data-mode="compare" id="tab-compare">Compare</button>
+        </div>
+
+        <!-- Single Search -->
+        <form class="search-form" id="search-form" autocomplete="off">
+            <div class="search-wrapper">
+                <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                <input type="text" id="city-input" class="search-input" placeholder="Search for a city…" aria-label="City name" required />
+                <button type="submit" class="search-btn" id="search-btn">Go</button>
+            </div>
+        </form>
+
+        <!-- Compare Search -->
+        <form class="search-form compare-form hidden" id="compare-form" autocomplete="off">
+            <div class="compare-inputs">
+                <div class="search-wrapper compact">
+                    <input type="text" id="city1-input" class="search-input" placeholder="City 1…" required />
+                </div>
+                <span class="vs-badge">VS</span>
+                <div class="search-wrapper compact">
+                    <input type="text" id="city2-input" class="search-input" placeholder="City 2…" required />
+                </div>
+                <button type="submit" class="search-btn">Compare</button>
+            </div>
+        </form>
+
+        <!-- Unit Toggle -->
+        <div class="unit-toggle">
+            <span class="unit-label active" data-unit="metric">°C</span>
+            <label class="toggle-switch"><input type="checkbox" id="unit-toggle" /><span class="toggle-slider"></span></label>
+            <span class="unit-label" data-unit="imperial">°F</span>
+        </div>
+    </header>
+
+    <!-- ═══════════ ERROR ═══════════ -->
+    <div class="error-container hidden" id="error-container">
+        <div class="error-card"><span class="error-icon">⚠️</span><p class="error-text" id="error-text"></p></div>
+    </div>
+
+    <!-- ═══════════ LOADING ═══════════ -->
+    <div class="loading-container hidden" id="loading-container">
+        <div class="spinner"></div><p class="loading-text">Fetching weather data…</p>
+    </div>
+
+    <!-- ═══════════ WELCOME ═══════════ -->
+    <section class="welcome-section" id="welcome-section">
+        <div class="welcome-card"><span class="welcome-icon">🌍</span><h2>Explore the Weather</h2><p>Search a city or compare two cities</p></div>
+    </section>
+
+    <!-- ═══════════ SINGLE WEATHER ═══════════ -->
+    <section class="weather-content hidden" id="weather-content">
+        <!-- Current Weather -->
+        <div class="current-weather glass-card">
+            <div class="current-top">
+                <div class="current-location"><h2 class="city-name" id="city-name"></h2><p class="city-meta" id="city-meta"></p></div>
+                <div class="current-icon" id="current-icon"></div>
+            </div>
+            <div class="current-body">
+                <div class="temp-block"><span class="temp-value" id="temp-value"></span><span class="temp-unit" id="temp-unit"></span></div>
+                <p class="condition-text" id="condition-text"></p>
+            </div>
+            <div class="current-details" id="current-details"></div>
+        </div>
+
+        <!-- Recommendations -->
+        <div class="recs-section" id="recs-section">
+            <h3 class="section-title">🎯 Smart Recommendations</h3>
+            <div class="recs-grid" id="recs-grid"></div>
+        </div>
+
+        <!-- 5-Day Forecast -->
+        <div class="forecast-section">
+            <h3 class="section-title">📅 5-Day Forecast</h3>
+            <div class="forecast-cards" id="forecast-cards"></div>
+        </div>
+    </section>
+
+    <!-- ═══════════ COMPARE VIEW ═══════════ -->
+    <section class="compare-content hidden" id="compare-content">
+        <div class="compare-grid">
+            <div class="compare-col" id="compare-col-1"></div>
+            <div class="compare-divider"></div>
+            <div class="compare-col" id="compare-col-2"></div>
+        </div>
+    </section>
+
+    <!-- ═══════════ CHATBOT ═══════════ -->
+    <button class="chat-fab" id="chat-fab" aria-label="Open weather assistant">💬</button>
+    <div class="chat-panel hidden" id="chat-panel">
+        <div class="chat-header">
+            <span>🤖 Weather Assistant</span>
+            <button class="chat-close" id="chat-close">✕</button>
+        </div>
+        <div class="chat-messages" id="chat-messages">
+            <div class="chat-msg bot"><p>Hi! I'm your weather assistant. Ask me anything about the weather — "Do I need an umbrella?", "What should I wear?", or "What's the UV index?"</p></div>
+        </div>
+        <form class="chat-input-form" id="chat-input-form">
+            <input type="text" id="chat-input" class="chat-input" placeholder="Ask about the weather…" />
+            <button type="submit" class="chat-send">→</button>
+        </form>
+    </div>
+
+</main>
+<script src="{{ url_for('static', filename='js/chatbot.js') }}"></script>
+<script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>
