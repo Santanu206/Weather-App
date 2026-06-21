@@ -1,13 +1,28 @@
 """
 Dynamic Weather Dashboard v2 — Flask Backend (Open-Meteo)
 Extended data, recommender engine, city comparison.
+All weather fetches are proxied through this server to avoid CORS/Mixed Content
+issues in the browser. The frontend only ever calls /api/weather and /api/compare.
 """
 
 from datetime import datetime
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, render_template, request, send_from_directory
 import requests as http_requests
+import os
 
-app = Flask(__name__, static_folder='public', static_url_path='')
+app = Flask(__name__, template_folder='templates')
+
+STATIC_CSS = os.path.join(os.path.dirname(__file__), 'static', 'css')
+STATIC_JS  = os.path.join(os.path.dirname(__file__), 'static', 'js')
+
+# ── Serve static assets explicitly so Vercel routes them correctly ──
+@app.route('/css/<path:filename>')
+def serve_css(filename):
+    return send_from_directory(STATIC_CSS, filename)
+
+@app.route('/js/<path:filename>')
+def serve_js(filename):
+    return send_from_directory(STATIC_JS, filename)
 
 GEOCODING_URL = "https://geocoding-api.open-meteo.com/v1/search"
 FORECAST_URL = "https://api.open-meteo.com/v1/forecast"

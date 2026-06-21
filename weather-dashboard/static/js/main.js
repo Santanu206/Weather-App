@@ -1,15 +1,21 @@
 /**
  * Dynamic Weather Dashboard v2 — Main Frontend Logic
- * Modules: State, API, Renderers, Theme, Audio, Compare, Chat
+ * Modules: State, API (with timeout), Renderers, Theme, Compare, Chat
  */
 
 // ── DOM ─────────────────────────────────────────────────────
 const dom = {
     searchForm: document.getElementById('search-form'),
     cityInput: document.getElementById('city-input'),
+    autocompleteDropdown: document.getElementById('autocomplete-dropdown'),
+    autocompleteWrapper: document.getElementById('autocomplete-wrapper'),
     compareForm: document.getElementById('compare-form'),
     city1Input: document.getElementById('city1-input'),
+    city1Dropdown: document.getElementById('city1-dropdown'),
+    city1Wrapper: document.getElementById('city1-wrapper'),
     city2Input: document.getElementById('city2-input'),
+    city2Dropdown: document.getElementById('city2-dropdown'),
+    city2Wrapper: document.getElementById('city2-wrapper'),
     unitToggle: document.getElementById('unit-toggle'),
     errorContainer: document.getElementById('error-container'),
     errorText: document.getElementById('error-text'),
@@ -24,11 +30,12 @@ const dom = {
     tempUnit: document.getElementById('temp-unit'),
     conditionText: document.getElementById('condition-text'),
     currentDetails: document.getElementById('current-details'),
+    recsSection: document.getElementById('recs-section'),
     recsGrid: document.getElementById('recs-grid'),
+    forecastSection: document.getElementById('forecast-section'),
     forecastCards: document.getElementById('forecast-cards'),
     compareCol1: document.getElementById('compare-col-1'),
     compareCol2: document.getElementById('compare-col-2'),
-    audioToggle: document.getElementById('audio-toggle'),
     themeToggle: document.getElementById('theme-toggle'),
     themeIcon: document.getElementById('theme-icon'),
     tabSingle: document.getElementById('tab-single'),
@@ -48,7 +55,6 @@ const state = {
     mode: 'single',
     weatherData: null,
     isDarkMode: true,
-    audioEnabled: false,
 };
 
 // ── Icons ───────────────────────────────────────────────────
@@ -70,29 +76,37 @@ function getEmoji(key, isDay = true) {
 }
 
 // ── UI Helpers ──────────────────────────────────────────────
-function show(el) { el.classList.remove('hidden'); }
-function hide(el) { el.classList.add('hidden'); }
+function show(el) { if (el) el.classList.remove('hidden'); }
+function hide(el) { if (el) el.classList.add('hidden'); }
 
 function showLoading() {
     hide(dom.errorContainer); hide(dom.welcomeSection);
     hide(dom.weatherContent); hide(dom.compareContent);
     show(dom.loadingContainer);
 }
+
 function showError(msg) {
     hide(dom.loadingContainer); hide(dom.weatherContent);
     hide(dom.welcomeSection); hide(dom.compareContent);
-    dom.errorText.textContent = msg; show(dom.errorContainer);
+    dom.errorText.textContent = msg;
+    show(dom.errorContainer);
 }
+
 function showWeather() {
     hide(dom.loadingContainer); hide(dom.errorContainer);
     hide(dom.welcomeSection); hide(dom.compareContent);
     show(dom.weatherContent);
+    // Conditionally reveal sections only after data is available
+    show(dom.recsSection);
+    show(dom.forecastSection);
 }
+
 function showCompare() {
     hide(dom.loadingContainer); hide(dom.errorContainer);
     hide(dom.welcomeSection); hide(dom.weatherContent);
     show(dom.compareContent);
 }
+
 function updateUnitLabels() {
     document.querySelectorAll('.unit-label').forEach(l =>
         l.classList.toggle('active', l.dataset.unit === state.units));
@@ -116,150 +130,50 @@ function setDarkMode(dark) {
 }
 
 // ═════════════════════════════════════════════════════════════
-//  AMBIENT AUDIO ENGINE (Web Audio API — procedural)
+//  API LAYER — with timeout and proper error messages
 // ═════════════════════════════════════════════════════════════
-const AudioEngine = (() => {
-    let ctx = null, masterGain = null, activeNodes = [], currentTheme = null;
 
-    function init() {
-        if (ctx) return;
-        ctx = new (window.AudioContext || window.webkitAudioContext)();
-        masterGain = ctx.createGain();
-        masterGain.gain.value = 0.3;
-        masterGain.connect(ctx.destination);
-    }
+const FETCH_TIMEOUT_MS = 8000;
 
-    function createNoise(seconds) {
-        const sr = ctx.sampleRate;
-        const buf = ctx.createBuffer(1, sr * seconds, sr);
-        const data = buf.getChannelData(0);
-        for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
-        return buf;
-    }
-
-    function stopAll() {
-        activeNodes.forEach(n => { try { n.stop(); } catch(e) {} try { n.disconnect(); } catch(e) {} });
-        activeNodes = [];
-    }
-
-    function playRain() {
-        const src = ctx.createBufferSource();
-        src.buffer = createNoise(4); src.loop = true;
-        const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 3000;
-        const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 400;
-        const g = ctx.createGain(); g.gain.value = 0.5;
-        src.connect(lp).connect(hp).connect(g).connect(masterGain);
-        src.start(); activeNodes.push(src);
-    }
-
-    function playWind() {
-        const src = ctx.createBufferSource();
-        src.buffer = createNoise(6); src.loop = true;
-        const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 600;
-        const g = ctx.createGain(); g.gain.value = 0.35;
-        // LFO for modulation
-        const lfo = ctx.createOscillator(); lfo.frequency.value = 0.3;
-        const lfoGain = ctx.createGain(); lfoGain.gain.value = 0.15;
-        lfo.connect(lfoGain).connect(g.gain);
-        lfo.start();
-        src.connect(lp).connect(g).connect(masterGain);
-        src.start(); activeNodes.push(src, lfo);
-    }
-
-    function playBirds() {
-        function chirp() {
-            if (currentTheme !== 'clear') return;
-            const osc = ctx.createOscillator();
-            const g = ctx.createGain();
-            osc.type = 'sine';
-            osc.frequency.value = 2000 + Math.random() * 2000;
-            g.gain.setValueAtTime(0, ctx.currentTime);
-            g.gain.linearRampToValueAtTime(0.08, ctx.currentTime + 0.05);
-            g.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.15);
-            osc.connect(g).connect(masterGain);
-            osc.start(ctx.currentTime);
-            osc.stop(ctx.currentTime + 0.2);
-            setTimeout(chirp, 1000 + Math.random() * 3000);
+/**
+ * Wraps fetch() with an AbortController-based timeout.
+ * Rejects with a user-friendly Error if the request takes too long.
+ */
+async function fetchWithTimeout(url, timeoutMs = FETCH_TIMEOUT_MS) {
+    const controller = new AbortController();
+    const timerId = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+        const response = await fetch(url, { signal: controller.signal });
+        clearTimeout(timerId);
+        return response;
+    } catch (err) {
+        clearTimeout(timerId);
+        if (err.name === 'AbortError') {
+            throw new Error(
+                'Weather service is currently unreachable. Please try searching for a specific city.'
+            );
         }
-        chirp();
+        throw new Error(
+            'Weather service is currently unreachable. Please try searching for a specific city.'
+        );
     }
+}
 
-    function playThunder() {
-        playRain();
-        function rumble() {
-            if (currentTheme !== 'thunderstorm') return;
-            const src = ctx.createBufferSource();
-            src.buffer = createNoise(2);
-            const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 200;
-            const g = ctx.createGain();
-            g.gain.setValueAtTime(0.6, ctx.currentTime);
-            g.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 1.5);
-            src.connect(lp).connect(g).connect(masterGain);
-            src.start(); src.stop(ctx.currentTime + 2);
-            setTimeout(rumble, 5000 + Math.random() * 10000);
-        }
-        setTimeout(rumble, 2000);
-    }
-
-    function playSnow() {
-        const src = ctx.createBufferSource();
-        src.buffer = createNoise(4); src.loop = true;
-        const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 4000;
-        const g = ctx.createGain(); g.gain.value = 0.08;
-        src.connect(hp).connect(g).connect(masterGain);
-        src.start(); activeNodes.push(src);
-    }
-
-    function playNight() {
-        const src = ctx.createBufferSource();
-        src.buffer = createNoise(4); src.loop = true;
-        const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 3500; bp.Q.value = 8;
-        const g = ctx.createGain(); g.gain.value = 0.04;
-        src.connect(bp).connect(g).connect(masterGain);
-        src.start(); activeNodes.push(src);
-    }
-
-    function setTheme(theme, isDay) {
-        if (!state.audioEnabled) return;
-        init();
-        if (theme === currentTheme) return;
-        currentTheme = theme;
-        stopAll();
-        if (theme === 'rain') playRain();
-        else if (theme === 'thunderstorm') playThunder();
-        else if (theme === 'snow') playSnow();
-        else if (theme === 'fog') playWind();
-        else if (theme === 'clouds') playWind();
-        else if (theme === 'clear' && isDay) playBirds();
-        else if (theme === 'clear' && !isDay) playNight();
-    }
-
-    function toggle() {
-        state.audioEnabled = !state.audioEnabled;
-        dom.audioToggle.classList.toggle('active', state.audioEnabled);
-        if (state.audioEnabled) {
-            init();
-            if (state.weatherData) setTheme(state.weatherData.current.theme, state.weatherData.current.is_day);
-        } else {
-            stopAll(); currentTheme = null;
-        }
-    }
-
-    return { setTheme, toggle };
-})();
-
-// ═════════════════════════════════════════════════════════════
-//  API LAYER
-// ═════════════════════════════════════════════════════════════
 async function fetchWeather(city, units) {
-    const r = await fetch(`/api/weather?${new URLSearchParams({ city, units })}`);
+    const r = await fetchWithTimeout(
+        `/api/weather?${new URLSearchParams({ city, units })}`,
+        FETCH_TIMEOUT_MS
+    );
     const d = await r.json();
     if (!r.ok) throw new Error(d.error || 'Something went wrong.');
     return d;
 }
 
 async function fetchCompare(city1, city2, units) {
-    const r = await fetch(`/api/compare?${new URLSearchParams({ city1, city2, units })}`);
+    const r = await fetchWithTimeout(
+        `/api/compare?${new URLSearchParams({ city1, city2, units })}`,
+        FETCH_TIMEOUT_MS
+    );
     const d = await r.json();
     if (!r.ok) throw new Error(d.error || 'Something went wrong.');
     return d;
@@ -359,6 +273,9 @@ function renderCompareCol(data, col) {
 async function searchCity(city) {
     if (!city) return;
     state.currentCity = city;
+    // Hide sections before loading so they don't show stale headings
+    hide(dom.recsSection);
+    hide(dom.forecastSection);
     showLoading();
     try {
         const data = await fetchWeather(city, state.units);
@@ -367,13 +284,14 @@ async function searchCity(city) {
         renderRecs(data.recommendations);
         renderForecast(data.forecast);
         applyTheme(data.current.theme, data.current.is_day);
-        AudioEngine.setTheme(data.current.theme, data.current.is_day);
         // Auto light/dark based on location time
         if (!localStorage.getItem('theme-mode-manual')) {
             setDarkMode(!data.current.is_day);
         }
         showWeather();
-    } catch (err) { showError(err.message); }
+    } catch (err) {
+        showError(err.message);
+    }
 }
 
 async function compareCities(c1, c2) {
@@ -386,11 +304,13 @@ async function compareCities(c1, c2) {
         applyTheme(data.city1.current.theme, data.city1.current.is_day);
         state.weatherData = data.city1;
         showCompare();
-    } catch (err) { showError(err.message); }
+    } catch (err) {
+        showError(err.message);
+    }
 }
 
 // ═════════════════════════════════════════════════════════════
-//  CHAT
+//  CHAT — decoupled from dashboard state
 // ═════════════════════════════════════════════════════════════
 function addChatMsg(text, isUser) {
     const div = document.createElement('div');
@@ -446,10 +366,7 @@ dom.themeToggle.addEventListener('click', () => {
     setDarkMode(!state.isDarkMode);
 });
 
-// Audio toggle
-dom.audioToggle.addEventListener('click', () => AudioEngine.toggle());
-
-// Chat
+// Chat — chatbot initialises independently, regardless of dashboard state
 dom.chatFab.addEventListener('click', () => {
     const open = dom.chatPanel.classList.contains('hidden');
     dom.chatPanel.classList.toggle('hidden', !open);
@@ -463,6 +380,8 @@ dom.chatForm.addEventListener('submit', e => {
     addChatMsg(msg, true);
     dom.chatInput.value = '';
     setTimeout(() => {
+        // Pass weatherData from state — will be null if dashboard hasn't loaded,
+        // chatbot handles null gracefully with its own fallback messages.
         const response = ChatBot.getResponse(msg, state.weatherData);
         addChatMsg(response, false);
     }, 300);
@@ -472,3 +391,204 @@ dom.chatForm.addEventListener('submit', e => {
 updateUnitLabels();
 const savedMode = localStorage.getItem('theme-mode');
 if (savedMode) setDarkMode(savedMode === 'dark');
+
+// ═════════════════════════════════════════════════════════════
+//  AUTOCOMPLETE MODULE  (reusable factory)
+// ═════════════════════════════════════════════════════════════
+
+const GEOCODE_API          = 'https://geocoding-api.open-meteo.com/v1/search';
+const AC_DEBOUNCE_MS       = 300;
+const AC_MIN_CHARS         = 2;
+const AC_MAX_RESULTS       = 7;
+
+/** Generic debounce utility */
+function debounce(fn, delay) {
+    let timer;
+    return function (...args) {
+        clearTimeout(timer);
+        timer = setTimeout(() => fn.apply(this, args), delay);
+    };
+}
+
+/**
+ * Factory: wires autocomplete behaviour to a specific input + dropdown pair.
+ *
+ * @param {HTMLInputElement}  inputEl    - The text input to listen on
+ * @param {HTMLUListElement}  dropdownEl - The <ul> to populate
+ * @param {HTMLElement}       wrapperEl  - Outer wrapper (used for click-outside)
+ * @param {function(string)}  onSelect   - Called with the city name when chosen
+ * @returns {{ close: function }} - Object exposing a close() method
+ */
+function createAutocomplete(inputEl, dropdownEl, wrapperEl, onSelect) {
+    let activeIdx = -1;
+
+    function items() {
+        return [...dropdownEl.querySelectorAll('.autocomplete-item:not(.no-results):not(.loading)')];
+    }
+    function setActive(idx) {
+        const els = items();
+        els.forEach(el => el.classList.remove('active'));
+        activeIdx = idx;
+        if (idx >= 0 && idx < els.length) {
+            els[idx].classList.add('active');
+            els[idx].scrollIntoView({ block: 'nearest' });
+        }
+    }
+
+    function open()  { dropdownEl.classList.remove('hidden'); }
+    function close() { dropdownEl.classList.add('hidden'); dropdownEl.innerHTML = ''; activeIdx = -1; }
+
+    function showLoading() {
+        dropdownEl.innerHTML = `
+            <li class="autocomplete-item loading">
+                <span class="autocomplete-spinner"></span>
+                Searching cities…
+            </li>`;
+        open();
+    }
+
+    function renderResults(results) {
+        activeIdx = -1;
+        if (!results.length) {
+            dropdownEl.innerHTML = `<li class="autocomplete-item no-results">🔍 No cities found</li>`;
+            open(); return;
+        }
+        dropdownEl.innerHTML = results.map((r, i) => {
+            const city       = r.name         || '';
+            const admin      = r.admin1        || '';
+            const country    = r.country_code  || '';
+            const countryFull = r.country      || '';
+            const region     = [admin, countryFull].filter(Boolean).join(', ');
+            return `
+                <li class="autocomplete-item"
+                    role="option" id="ac-item-${inputEl.id}-${i}"
+                    data-city="${city.replace(/"/g, '&quot;')}" tabindex="-1">
+                    <span class="item-text">
+                        <span class="item-city">${city}</span>
+                        ${region ? `<span class="item-region">${region}</span>` : ''}
+                    </span>
+                    ${country ? `<span class="item-country">${country}</span>` : ''}
+                </li>`;
+        }).join('');
+        open();
+        dropdownEl.querySelectorAll('.autocomplete-item').forEach(item => {
+            item.addEventListener('mousedown', e => {
+                e.preventDefault();
+                const city = item.dataset.city;
+                if (city) { inputEl.value = city; close(); onSelect(city); }
+            });
+        });
+    }
+
+    async function fetchSuggestions(query) {
+        if (query.length < AC_MIN_CHARS) { close(); return; }
+        showLoading();
+        try {
+            const url = `${GEOCODE_API}?name=${encodeURIComponent(query)}&count=${AC_MAX_RESULTS}&language=en&format=json`;
+            const res = await fetch(url);
+            if (!res.ok) throw new Error('API error');
+            const data = await res.json();
+            renderResults(data.results || []);
+        } catch { close(); }
+    }
+
+    /* Keyboard navigation */
+    inputEl.addEventListener('keydown', e => {
+        const els = items();
+        if (!els.length || dropdownEl.classList.contains('hidden')) return;
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            setActive(activeIdx < els.length - 1 ? activeIdx + 1 : 0);
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            setActive(activeIdx > 0 ? activeIdx - 1 : els.length - 1);
+        } else if (e.key === 'Enter' && activeIdx >= 0) {
+            e.preventDefault();
+            const city = els[activeIdx].dataset.city;
+            if (city) { inputEl.value = city; close(); onSelect(city); }
+        } else if (e.key === 'Escape') {
+            close();
+        }
+    });
+
+    const debouncedFetch = debounce(v => fetchSuggestions(v.trim()), AC_DEBOUNCE_MS);
+    inputEl.addEventListener('input', e => {
+        const val = e.target.value;
+        if (val.trim().length < AC_MIN_CHARS) { close(); return; }
+        debouncedFetch(val);
+    });
+    inputEl.addEventListener('blur', () => setTimeout(close, 150));
+    return { close };
+}
+
+/* ── Instantiate the three autocomplete instances ── */
+const acSingle = createAutocomplete(dom.cityInput, dom.autocompleteDropdown, dom.autocompleteWrapper, city => searchCity(city));
+const acCity1  = createAutocomplete(dom.city1Input, dom.city1Dropdown, dom.city1Wrapper, city => { dom.city1Input.value = city; });
+const acCity2  = createAutocomplete(dom.city2Input, dom.city2Dropdown, dom.city2Wrapper, city => { dom.city2Input.value = city; });
+
+document.addEventListener('click', e => {
+    if (!dom.autocompleteWrapper.contains(e.target)) acSingle.close();
+    if (dom.city1Wrapper && !dom.city1Wrapper.contains(e.target)) acCity1.close();
+    if (dom.city2Wrapper && !dom.city2Wrapper.contains(e.target)) acCity2.close();
+});
+dom.searchForm.addEventListener('submit', () => acSingle.close(), { capture: true });
+dom.compareForm.addEventListener('submit', () => { acCity1.close(); acCity2.close(); }, { capture: true });
+
+// ═════════════════════════════════════════════════════════════
+//  FEATURED CITIES — live weather cards on the landing page
+// ═════════════════════════════════════════════════════════════
+
+const FEATURED_CITIES = [
+    // Indian cities
+    'Mumbai', 'Delhi', 'Bengaluru', 'Kolkata', 'Chennai', 'Hyderabad',
+    // World cities
+    'London', 'New York', 'Tokyo', 'Paris', 'Dubai', 'Sydney',
+];
+
+async function loadFeaturedCities() {
+    const grid = document.getElementById('featured-grid');
+    if (!grid) return;
+
+    const results = await Promise.allSettled(
+        FEATURED_CITIES.map(city => fetchWeather(city, 'metric'))
+    );
+
+    grid.innerHTML = results.map((res, i) => {
+        if (res.status === 'rejected') {
+            return `<div class="featured-card" style="justify-content:center;align-items:center;color:var(--text-muted);font-size:.8rem;text-align:center">${FEATURED_CITIES[i]}<br>Unavailable</div>`;
+        }
+        const { location, current } = res.value;
+        const emoji = getEmoji(current.icon, current.is_day);
+        return `
+        <div class="featured-card" data-city="${location.city}" tabindex="0" role="button" aria-label="View weather for ${location.city}">
+            <div class="fc-top">
+                <div>
+                    <div class="fc-city">${location.city}</div>
+                    <div style="font-size:.7rem;color:var(--text-muted);margin-top:1px">${location.admin ? location.admin + ', ' : ''}${location.country}</div>
+                </div>
+                <span class="fc-country">${location.country}</span>
+            </div>
+            <div class="fc-icon">${emoji}</div>
+            <div class="fc-temp">${current.temp}<span class="fc-unit">${current.temp_unit}</span></div>
+            <div class="fc-desc">${current.description}</div>
+            <div class="fc-meta">
+                <span>💧 ${current.humidity}%</span>
+                <span>💨 ${current.wind_speed} km/h</span>
+                <span>🔆 UV ${current.uv_index}</span>
+            </div>
+        </div>`;
+    }).join('');
+
+    grid.querySelectorAll('.featured-card[data-city]').forEach(card => {
+        const go = () => {
+            const city = card.dataset.city;
+            dom.cityInput.value = city;
+            if (state.mode === 'compare') dom.tabSingle.click();
+            searchCity(city);
+        };
+        card.addEventListener('click', go);
+        card.addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
+    });
+}
+
+loadFeaturedCities();

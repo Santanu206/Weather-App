@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="Dynamic Weather Dashboard with real-time forecasts, smart recommendations, city comparison, and ambient audio." />
+    <meta name="description" content="Dynamic Weather Dashboard with real-time forecasts, smart recommendations, and city comparison — powered by Open-Meteo." />
     <title>Weather Dashboard — Live Forecast</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -18,11 +18,6 @@
         <div class="header-top">
             <h1 class="logo"><span class="logo-icon">⛅</span> Weather Dashboard</h1>
             <div class="header-controls">
-                <button class="icon-btn" id="audio-toggle" aria-label="Toggle ambient sound" title="Ambient Sound">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
-                        <path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07"/>
-                    </svg>
-                </button>
                 <button class="icon-btn" id="theme-toggle" aria-label="Toggle light/dark mode" title="Light/Dark Mode">
                     <span id="theme-icon">🌙</span>
                 </button>
@@ -36,23 +31,32 @@
         </div>
 
         <!-- Single Search -->
-        <form class="search-form" id="search-form" autocomplete="off">
-            <div class="search-wrapper">
-                <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                <input type="text" id="city-input" class="search-input" placeholder="Search for a city…" aria-label="City name" required />
-                <button type="submit" class="search-btn" id="search-btn">Go</button>
-            </div>
-        </form>
+        <div class="autocomplete-wrapper" id="autocomplete-wrapper">
+            <form class="search-form" id="search-form" autocomplete="off">
+                <div class="search-wrapper">
+                    <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                    <input type="text" id="city-input" class="search-input" placeholder="Search for a city…" aria-label="City name" required />
+                    <button type="submit" class="search-btn" id="search-btn">Go</button>
+                </div>
+            </form>
+            <ul class="autocomplete-dropdown hidden" id="autocomplete-dropdown" role="listbox" aria-label="City suggestions"></ul>
+        </div>
 
         <!-- Compare Search -->
         <form class="search-form compare-form hidden" id="compare-form" autocomplete="off">
             <div class="compare-inputs">
-                <div class="search-wrapper compact">
-                    <input type="text" id="city1-input" class="search-input" placeholder="City 1…" required />
+                <div class="autocomplete-wrapper compact" id="city1-wrapper">
+                    <div class="search-wrapper compact">
+                        <input type="text" id="city1-input" class="search-input" placeholder="City 1…" required />
+                    </div>
+                    <ul class="autocomplete-dropdown hidden" id="city1-dropdown" role="listbox" aria-label="City 1 suggestions"></ul>
                 </div>
                 <span class="vs-badge">VS</span>
-                <div class="search-wrapper compact">
-                    <input type="text" id="city2-input" class="search-input" placeholder="City 2…" required />
+                <div class="autocomplete-wrapper compact" id="city2-wrapper">
+                    <div class="search-wrapper compact">
+                        <input type="text" id="city2-input" class="search-input" placeholder="City 2…" required />
+                    </div>
+                    <ul class="autocomplete-dropdown hidden" id="city2-dropdown" role="listbox" aria-label="City 2 suggestions"></ul>
                 </div>
                 <button type="submit" class="search-btn">Compare</button>
             </div>
@@ -71,14 +75,75 @@
         <div class="error-card"><span class="error-icon">⚠️</span><p class="error-text" id="error-text"></p></div>
     </div>
 
-    <!-- ═══════════ LOADING ═══════════ -->
+    <!-- ═══════════ LOADING (Skeleton) ═══════════ -->
     <div class="loading-container hidden" id="loading-container">
-        <div class="spinner"></div><p class="loading-text">Fetching weather data…</p>
+        <div class="skeleton-card">
+            <div class="skeleton-row">
+                <div class="skeleton skeleton-title"></div>
+                <div class="skeleton skeleton-icon"></div>
+            </div>
+            <div class="skeleton skeleton-temp"></div>
+            <div class="skeleton skeleton-subtitle"></div>
+            <div class="skeleton-details">
+                <div class="skeleton skeleton-detail"></div>
+                <div class="skeleton skeleton-detail"></div>
+                <div class="skeleton skeleton-detail"></div>
+                <div class="skeleton skeleton-detail"></div>
+                <div class="skeleton skeleton-detail"></div>
+                <div class="skeleton skeleton-detail"></div>
+            </div>
+        </div>
+        <div class="skeleton-forecast">
+            <div class="skeleton skeleton-fc"></div>
+            <div class="skeleton skeleton-fc"></div>
+            <div class="skeleton skeleton-fc"></div>
+            <div class="skeleton skeleton-fc"></div>
+            <div class="skeleton skeleton-fc"></div>
+        </div>
     </div>
 
     <!-- ═══════════ WELCOME ═══════════ -->
     <section class="welcome-section" id="welcome-section">
-        <div class="welcome-card"><span class="welcome-icon">🌍</span><h2>Explore the Weather</h2><p>Search a city or compare two cities</p></div>
+        <!-- decorative orbs -->
+        <div class="w-orb w-orb-1"></div>
+        <div class="w-orb w-orb-2"></div>
+        <div class="w-orb w-orb-3"></div>
+
+        <!-- Hero -->
+        <div class="welcome-hero">
+            <div class="hero-globe">🌦️</div>
+            <h2 class="hero-title">Explore the World's<br><span class="hero-accent">Weather, Live</span></h2>
+            <p class="hero-subtitle">Real-time conditions &middot; 5-day forecasts &middot; Smart AI recommendations &middot; City comparisons</p>
+            <div class="hero-chips">
+                <span class="hero-chip">🌡️ Real-time</span>
+                <span class="hero-chip">📅 5-Day Forecast</span>
+                <span class="hero-chip">🔬 10+ Metrics</span>
+                <span class="hero-chip">🆚 Compare Cities</span>
+                <span class="hero-chip">🤖 AI Assistant</span>
+            </div>
+        </div>
+
+        <!-- Featured Cities -->
+        <div class="featured-section">
+            <div class="featured-header">
+                <h3 class="featured-title">🌆 Popular Cities — Live Now</h3>
+                <p class="featured-hint">Click any card to load the full weather report</p>
+            </div>
+            <div class="featured-grid" id="featured-grid">
+                <div class="featured-card fc-skeleton"></div>
+                <div class="featured-card fc-skeleton"></div>
+                <div class="featured-card fc-skeleton"></div>
+                <div class="featured-card fc-skeleton"></div>
+                <div class="featured-card fc-skeleton"></div>
+                <div class="featured-card fc-skeleton"></div>
+                <div class="featured-card fc-skeleton"></div>
+                <div class="featured-card fc-skeleton"></div>
+                <div class="featured-card fc-skeleton"></div>
+                <div class="featured-card fc-skeleton"></div>
+                <div class="featured-card fc-skeleton"></div>
+                <div class="featured-card fc-skeleton"></div>
+            </div>
+        </div>
     </section>
 
     <!-- ═══════════ SINGLE WEATHER ═══════════ -->
@@ -97,13 +162,13 @@
         </div>
 
         <!-- Recommendations -->
-        <div class="recs-section" id="recs-section">
+        <div class="recs-section hidden" id="recs-section">
             <h3 class="section-title">🎯 Smart Recommendations</h3>
             <div class="recs-grid" id="recs-grid"></div>
         </div>
 
         <!-- 5-Day Forecast -->
-        <div class="forecast-section">
+        <div class="forecast-section hidden" id="forecast-section">
             <h3 class="section-title">📅 5-Day Forecast</h3>
             <div class="forecast-cards" id="forecast-cards"></div>
         </div>
